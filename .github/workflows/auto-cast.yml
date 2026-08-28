@@ -1,0 +1,79 @@
+name: Auto Cast (Farcaster Yapper)
+
+# Workflow ini generate cast dari sebuah keyword secara terjadwal.
+# MODE default = generate saja (aman): hasil di-upload sebagai artifact + tampil di log.
+# Untuk auto-POST ke Farcaster, set secret NEYNAR_API_KEY + NEYNAR_SIGNER_UUID
+# lalu ubah AUTO_POST=true di bawah.
+
+on:
+  workflow_dispatch:        # jalankan manual dari tab Actions (bisa isi keyword)
+    inputs:
+      keyword:
+        description: "Keyword/topik yang mau di-cast"
+        required: true
+        default: "gm farcaster"
+      count:
+        description: "Jumlah cast"
+        required: false
+        default: "3"
+      tone:
+        description: "Tone: default | degen | thoughtful | educational"
+        required: false
+        default: "default"
+  schedule:
+    - cron: "0 2 * * *"     # tiap hari 02:00 UTC (= 09:00 WIB). Ubah sesuai selera.
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    env:
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_API_KEY:  ${{ secrets.LLM_API_KEY }}
+      LLM_MODEL:    ${{ secrets.LLM_MODEL }}
+      # --- untuk auto-post (opsional) ---
+      NEYNAR_API_KEY:     ${{ secrets.NEYNAR_API_KEY }}
+      NEYNAR_SIGNER_UUID: ${{ secrets.NEYNAR_SIGNER_UUID }}
+      AUTO_POST: "false"    # ubah ke "true" HANYA jika ingin benar-benar memposting
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Tentukan keyword
+        id: kw
+        run: |
+          if [ -n "${{ github.event.inputs.keyword }}" ]; then
+            echo "keyword=${{ github.event.inputs.keyword }}" >> "$GITHUB_OUTPUT"
+            echo "count=${{ github.event.inputs.count }}"     >> "$GITHUB_OUTPUT"
+            echo "tone=${{ github.event.inputs.tone }}"       >> "$GITHUB_OUTPUT"
+          else
+            # default untuk run terjadwal — ganti sesuai topik harianmu
+            echo "keyword=farcaster onchain summer" >> "$GITHUB_OUTPUT"
+            echo "count=3"       >> "$GITHUB_OUTPUT"
+            echo "tone=default"  >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate casts
+        run: |
+          python scripts/cast_generator.py "${{ steps.kw.outputs.keyword }}" \
+            --count "${{ steps.kw.outputs.count }}" \
+            --tone  "${{ steps.kw.outputs.tone }}" \
+            --json > casts.json
+          echo "----- HASIL -----"
+          cat casts.json
+
+      - name: Upload casts sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: casts
+          path: casts.json
+
+      - name: (Opsional) Auto-post cast pertama ke Farcaster
+        if: ${{ env.AUTO_POST == 'true' }}
+        run: |
+          FIRST=$(python -c "import json;print(json.load(open('casts.json'))['casts'][0])")
+          echo "Posting: $FIRST"
+          python scripts/farcaster_poster.py --text "$FIRST"

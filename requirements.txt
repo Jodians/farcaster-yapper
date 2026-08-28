@@ -1,0 +1,3 @@
+# Tidak ada dependency eksternal — semua pakai Python stdlib (urllib, json, argparse).
+# File ini sengaja kosong dari package agar ringan & gampang jalan di CI.
+# Butuh Python 3.8+.
