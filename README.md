@@ -94,7 +94,21 @@ File: `.github/workflows/auto-cast.yml`
 | `LLM_BASE_URL` | — | `https://api.justwoker.icu/v1` | Base URL LLM |
 | `LLM_MODEL` | — | `claude-opus-4-8` | Nama model |
 | `NEYNAR_API_KEY` | posting saja | — | API key Neynar |
-| `NEYNAR_SIGNER_UUID` | posting saja | — | signer akun Farcaster |
+| `NEYNAR_SIGNER_UUID` | posting saja | — | signer akun Farcaster (WAJIB buat posting) |
+| `NEYNAR_USERNAME` | — | — | username FC (tanpa @) untuk verifikasi identitas / resolve FID |
+
+> **Username vs signer_uuid:** `NEYNAR_USERNAME` cuma dipakai untuk *menunjukkan
+> posting sebagai siapa* (resolve FID via `--whoami`). Untuk benar-benar
+> memposting, tetap butuh `NEYNAR_SIGNER_UUID` — username saja tidak cukup
+> (itu batasan protokol Farcaster: post harus ditandatangani signer).
+
+Cek identitas tanpa posting:
+
+```bash
+python scripts/farcaster_poster.py --whoami --username jodi
+# atau set NEYNAR_USERNAME=jodi di .env lalu:
+python scripts/farcaster_poster.py --whoami
+```
 
 ---
 
