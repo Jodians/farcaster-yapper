@@ -137,6 +137,10 @@ def main():
         return
 
     text = args.text if args.text else sys.stdin.read()
+
+    # Strip trailing newline dari stdin / arg agar tidak makan batas karakter.
+    text = text.strip()
+
     result = post_cast(text, dry_run=args.dry_run, username=args.username)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

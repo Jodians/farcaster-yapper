@@ -13,7 +13,7 @@ Endpoint LLM dikonfigurasi lewat ENV (default: justwoker.icu, OpenAI-compatible)
 Contoh:
     python scripts/cast_generator.py "restaking di ethereum"
     python scripts/cast_generator.py "monad testnet" --count 5 --tone degen
-    python scripts/cast_generator.py "airdrop season" --json > casts.json
+    python scripts/cast_generator.py "airdrop season" --lang id --json > casts.json
 
 Output: teks (default) atau JSON (--json). Tidak memposting apa pun — murni generate.
 """
@@ -24,6 +24,13 @@ import sys
 import urllib.request
 import urllib.error
 
+# Load .env automatically (works on Windows + Linux without `export`).
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass  # dotenv optional; fall back to real env vars / manual export
+
 BASE_URL = os.getenv("LLM_BASE_URL", "https://api.justwoker.icu/v1").rstrip("/")
 API_KEY = os.getenv("LLM_API_KEY", "")
 MODEL = os.getenv("LLM_MODEL", "claude-opus-4-8")
@@ -32,17 +39,21 @@ MAX_CAST_LEN = 320  # batas karakter Farcaster
 
 TONES = {
     "default": "santai tapi berbobot, khas builder crypto yang paham teknis",
-    "degen": "energik, playful, sedikit meme-y, khas degen CT tapi tetap ada insight",
+    "degen": "enerjik, playful, sedikit meme-y, khas degen CT tapi tetap ada insight",
     "thoughtful": "reflektif, thread-leader, memancing diskusi, tanpa hype kosong",
     "educational": "menjelaskan 1 konsep dengan analogi sederhana, ramah pemula",
 }
+
+SYSTEM = (
+    "Kamu adalah yapper Farcaster berpengalaman di niche crypto/CT. "
+    "Tugasmu HANYA membalas dalam JSON valid. Jangan pernah menambah teks di luar JSON."
+)
 
 
 def build_prompt(keyword: str, count: int, tone: str, lang: str) -> str:
     tone_desc = TONES.get(tone, TONES["default"])
     lang_line = "Bahasa Indonesia" if lang == "id" else "English"
-    return f"""Kamu adalah seorang yapper Farcaster berpengalaman. Buatkan {count} cast (post) ORIGINAL
-dari keyword/topik berikut. Setiap cast HARUS:
+    return f"""Buatkan {count} cast (post) ORIGINAL dari keyword/topik berikut. Setiap cast HARUS:
 - Maksimal {MAX_CAST_LEN} karakter (WAJIB, hitung dengan cermat).
 - Ditulis dalam {lang_line}.
 - Gaya: {tone_desc}.
@@ -58,14 +69,18 @@ Balas HANYA dalam format JSON valid berikut (tanpa teks lain):
 {{"casts": ["cast pertama", "cast kedua", ...]}}"""
 
 
-def call_llm(prompt: str, timeout: int = 60) -> str:
+def call_llm(prompt: str, timeout: int = 90) -> str:
     if not API_KEY:
-        sys.exit("ERROR: LLM_API_KEY belum di-set (export LLM_API_KEY=sk-...).")
+        sys.exit("ERROR: LLM_API_KEY belum di-set. Isi di .env atau export LLM_API_KEY=sk-...")
     payload = {
         "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {"role": "system", "content": SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
         "temperature": 0.9,
         "max_tokens": 1200,
+        "response_format": {"type": "json_object"},
     }
     req = urllib.request.Request(
         f"{BASE_URL}/chat/completions",
@@ -73,7 +88,7 @@ def call_llm(prompt: str, timeout: int = 60) -> str:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {API_KEY}",
-            "User-Agent": "farcaster-yapper/1.0",
+            "User-Agent": "farcaster-yapper/1.1",
         },
         method="POST",
     )
@@ -81,33 +96,47 @@ def call_llm(prompt: str, timeout: int = 60) -> str:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.load(r)
     except urllib.error.HTTPError as e:
-        sys.exit(f"ERROR HTTP {e.code}: {e.read().decode()[:200]}")
+        sys.exit(f"ERROR HTTP {e.code}: {e.read().decode()[:300]}")
     except Exception as e:
         sys.exit(f"ERROR memanggil LLM: {e}")
     return data["choices"][0]["message"]["content"]
 
 
 def parse_casts(raw: str) -> list:
-    """Ambil array casts dari respons LLM, toleran terhadap teks pembungkus."""
+    """Ambil array casts dari respons LLM, toleran terhadap berbagai format."""
+    if not raw:
+        return []
     raw = raw.strip()
-    # buang code fence kalau ada
-    if raw.startswith("```"):
-        raw = raw.split("```", 2)[1] if raw.count("```") >= 2 else raw.strip("`")
-        if raw.lstrip().startswith("json"):
-            raw = raw.lstrip()[4:]
-    # cari objek JSON pertama
+
+    # Tangani deepseek-r1 style <think>...</think> block di awal.
+    if "<think>" in raw and "</think>" in raw:
+        raw = raw.split("</think>", 1)[1].strip()
+    # Tangani markdown code fence.
+    if "```" in raw:
+        # ambil bagian dalam fence pertama
+        parts = raw.split("```")
+        for p in parts:
+            p = p.strip()
+            if p.lower().startswith("json"):
+                p = p[4:].strip()
+            if p.startswith("{"):
+                raw = p
+                break
+    # Cari objek JSON pertama.
     start = raw.find("{")
     end = raw.rfind("}")
     if start != -1 and end != -1:
         try:
             obj = json.loads(raw[start:end + 1])
             casts = obj.get("casts", [])
-            if isinstance(casts, list) and casts:
-                return [c.strip() for c in casts if isinstance(c, str) and c.strip()]
+            if isinstance(casts, list):
+                out = [c.strip() for c in casts if isinstance(c, str) and c.strip()]
+                if out:
+                    return out
         except json.JSONDecodeError:
             pass
-    # fallback: pisah per baris non-kosong
-    return [ln.strip("-• ").strip() for ln in raw.splitlines() if ln.strip()]
+    # Fallback: pisah per baris non-kosong.
+    return [ln.strip("-• \n") for ln in raw.splitlines() if ln.strip() and not ln.strip().startswith("{")]
 
 
 def main():
@@ -124,11 +153,14 @@ def main():
     raw = call_llm(prompt)
     casts = parse_casts(raw)
 
+    if not casts:
+        sys.exit("ERROR: LLM tidak mengembalikan cast yang bisa di-parse. Coba lagi atau ganti model.")
+
     # enforce batas panjang: potong yang kepanjangan (jaga-jaga)
     clean = []
     for c in casts:
         if len(c) > MAX_CAST_LEN:
-            c = c[:MAX_CAST_LEN - 1].rstrip() + "…"
+            c = c[:MAX_CAST_LEN - 1].rstrip() + "\u2026"
         clean.append(c)
 
     if args.json:

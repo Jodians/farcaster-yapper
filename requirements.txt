@@ -1,3 +1,4 @@
-# Tidak ada dependency eksternal — semua pakai Python stdlib (urllib, json, argparse).
-# File ini sengaja kosong dari package agar ringan & gampang jalan di CI.
-# Butuh Python 3.8+.
+# Dependencies for farcaster-yapper.
+# python-dotenv is OPTIONAL but recommended: lets the scripts read .env
+# automatically on Windows/Linux without manually `export`-ing variables.
+python-dotenv>=1.0.0

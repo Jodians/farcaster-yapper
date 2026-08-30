@@ -19,23 +19,33 @@ atau di-pipe ke auto-post lewat Neynar.
 - **Output teks atau JSON** (`--json`) untuk dipipeline.
 - **Auto-post opsional** ke Farcaster via Neynar (default OFF — aman).
 - **GitHub Actions** built-in: manual (isi keyword) atau terjadwal.
-- **Zero dependency** — cuma Python 3.8+ stdlib.
+- **Auto-load `.env`** — jalan di Windows & Linux tanpa `export` manual (butuh `python-dotenv`, sudah di `requirements.txt`).
 
 ---
 
 ## 🚀 Cara pakai (lokal)
 
-```bash
-# 1. Set kredensial LLM
-cp .env.example .env
-# edit .env → isi LLM_API_KEY (endpoint OpenAI-compatible)
-export $(grep -v '^#' .env | xargs)   # atau set manual
+### Windows (PowerShell) — paling gampang
 
-# 2. Generate!
-python scripts/cast_generator.py "monad testnet"
-python scripts/cast_generator.py "airdrop season" --count 5 --tone degen
-python scripts/cast_generator.py "restaking di ethereum" --lang id --json > casts.json
+```powershell
+.\setup.ps1                       # bikin venv + install dep + buat .env
+# edit .env -> isi LLM_API_KEY
+.\.venv\Scripts\Activate.ps1
+python scripts/cast_generator.py "restaking di ethereum" --lang id
 ```
+
+### Linux / macOS
+
+```bash
+cp .env.example .env
+# edit .env -> isi LLM_API_KEY
+python3 scripts/cast_generator.py "monad testnet"
+python3 scripts/cast_generator.py "airdrop season" --count 5 --tone degen
+python3 scripts/cast_generator.py "restaking di ethereum" --lang id --json > casts.json
+```
+
+> Catatan: `.env` dibaca otomatis oleh script (via `python-dotenv`). Kamu tidak
+> perlu `export` variabel manual — cukup isi file `.env`.
 
 Contoh output:
 
@@ -114,7 +124,7 @@ python scripts/farcaster_poster.py --whoami
 
 ## 📁 Struktur
 
-```
+```text
 farcaster-yapper/
 ├── scripts/
 │   ├── cast_generator.py   # keyword → cast (inti)
@@ -123,9 +133,22 @@ farcaster-yapper/
 │   └── auto-cast.yml       # Actions: manual + terjadwal
 ├── .env.example
 ├── .gitignore
-├── requirements.txt
+├── requirements.txt        # python-dotenv (auto-load .env)
+├── setup.ps1               # helper setup Windows (PowerShell)
 └── README.md
 ```
+
+---
+
+## 🔧 Perbaikan & robustnes
+
+- **System role + `response_format: json_object`** — model (incl. `claude-opus-4-8`)
+  patuh instruksi & balik JSON bersih, bukan teks campur.
+- **Parser toleran** — tangani `deepseek-r1` `<think>` block, markdown fence,
+  maupun output berupa teks biasa (fallback per-baris).
+- **Auto-load `.env`** via `python-dotenv` — jalan di Windows tanpa `export`.
+- **Stdin di poster di-strip** — newline gak makan batas 320 karakter.
+- **Error jelas** kalau LLM gagal balik cast yang bisa di-parse.
 
 ---
 
